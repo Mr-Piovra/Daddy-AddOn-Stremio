@@ -3,6 +3,7 @@ export interface UserConfig {
   proxyPassword?: string;
   proxyType?: 'easyproxy' | 'mediaflow' | 'generic';
   includeDirect?: boolean;
+  languages?: string[];
   selectedCountries?: string[];
   enablePrivate?: boolean;
   enablePublic?: boolean;
@@ -29,15 +30,12 @@ export class ConfigParser {
   public static decode(rawStr?: string): UserConfig {
     if (!rawStr) return {};
 
-    // 1. Supporta formato JSON diretto o base64url
     let token = rawStr;
     if (token.startsWith('cfg-')) {
       token = token.substring(4);
     }
-    // Rimuovi eventuale trailing /manifest.json o simili
     token = token.split('/')[0].split('?')[0];
 
-    // Controlla formato base64url
     try {
       let b64 = token.replace(/-/g, '+').replace(/_/g, '/');
       while (b64.length % 4 !== 0) {
@@ -48,10 +46,9 @@ export class ConfigParser {
         return JSON.parse(jsonStr) as UserConfig;
       }
     } catch {
-      // Prova parser compatibile con token tvvoo (mfu_... / mfp_...)
+      // Parser compatibilità token personalizzati
     }
 
-    // 2. Parser compatibile token tvvoo (mfu_...-mfp_...-cln-pxt_mfl)
     const config: UserConfig = {};
 
     const mfuMatch = token.match(/mfu_([A-Za-z0-9_-]+)/);

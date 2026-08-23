@@ -1,5 +1,6 @@
 import { ChannelsService } from '../services/channels';
 import { ScheduleService } from '../services/schedule';
+import { ArtworkService } from '../services/artwork';
 import { StremioMetaPreview } from './catalog';
 
 export interface StremioMetaDetail extends StremioMetaPreview {
@@ -9,7 +10,7 @@ export interface StremioMetaDetail extends StremioMetaPreview {
 
 export class MetaHandler {
   /**
-   * Restituisce i dettagli completi dei metadati per un canale o evento.
+   * Restituisce i dettagli completi dei metadati con copertina, logo e sfondo dedicati.
    */
   public static async handle(args: {
     type: string;
@@ -24,15 +25,19 @@ export class MetaHandler {
 
       if (!channel) return { meta: null };
 
+      const art = ArtworkService.getChannelArtwork(channel.title, channel.language === 'it' ? 'IT' : 'US');
+
       return {
         meta: {
           id: `rivestream:private:${channel.id}`,
           type: 'tv',
           name: channel.title,
-          poster: 'https://raw.githubusercontent.com/qwertyuiop8899/tvvoo/refs/heads/main/public/tvvoo.png',
-          posterShape: 'square',
-          genres: ['Live TV', 'Sports', 'Private'],
-          description: `Canale televisivo / sportivo ${channel.title}\nID Stream: ${channel.id}\nProvider: RiveStream / DaddyLive HD`
+          poster: art.poster,
+          posterShape: 'poster',
+          logo: art.logo,
+          background: art.background,
+          genres: [channel.group || 'Live TV', channel.language === 'it' ? 'Italia' : 'English', 'Sports & TV'],
+          description: `Canale televisivo / sportivo ${channel.title}\nID Stream: ${channel.id}\nGruppo: ${channel.group || 'Live TV'}\nProvider: RiveStream / DaddyLive HD`
         }
       };
     }
@@ -44,14 +49,17 @@ export class MetaHandler {
 
       if (!channel) return { meta: null };
 
+      const art = ArtworkService.getChannelArtwork(channel.name, channel.country, channel.logo);
+
       return {
         meta: {
           id: `rivestream:public:${channel.id}`,
           type: 'tv',
           name: channel.name,
-          poster: channel.logo || 'https://raw.githubusercontent.com/qwertyuiop8899/tvvoo/refs/heads/main/public/tvvoo.png',
-          logo: channel.logo,
-          posterShape: 'square',
+          poster: art.poster,
+          posterShape: 'poster',
+          logo: art.logo || channel.logo,
+          background: art.background,
           genres: channel.categories && channel.categories.length > 0 ? channel.categories : ['IPTV', channel.country],
           website: channel.website,
           description: `Canale IPTV Pubblico (${channel.country})\nCategorie: ${channel.categories?.join(', ') || 'Generale'}\nSito web: ${channel.website || 'N/A'}`
@@ -66,6 +74,7 @@ export class MetaHandler {
 
       if (!event) return { meta: null };
 
+      const art = ArtworkService.getEventArtwork(event.event, event.category);
       const channelsListText = event.channels.map(c => `• ${c.channel_name} (ID: ${c.channel_id})`).join('\n');
 
       return {
@@ -73,8 +82,9 @@ export class MetaHandler {
           id: `rivestream:event:${event.id}`,
           type: 'tv',
           name: `${event.time ? `[${event.time}] ` : ''}${event.event}`,
-          poster: 'https://raw.githubusercontent.com/qwertyuiop8899/tvvoo/refs/heads/main/public/tvvoo.png',
+          poster: art.poster,
           posterShape: 'landscape',
+          background: art.background,
           genres: [event.category || 'Live Sports'],
           description: `Evento Live: ${event.event}\nOrario: ${event.time || 'Live'}\nCategoria: ${event.category}\n\nCanali che trasmettono:\n${channelsListText}`
         }

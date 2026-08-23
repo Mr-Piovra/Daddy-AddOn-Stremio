@@ -2,42 +2,33 @@ import { ChannelsService } from './services/channels';
 import { UserConfig } from './utils/configParser';
 
 export function getManifest(userConfig?: UserConfig) {
-  const countries = ChannelsService.getCountries();
-  const categories = ChannelsService.getCategories();
-
-  const popularCountryNames = [
-    'Italy', 'United States', 'United Kingdom', 'Spain', 'France',
-    'Germany', 'Portugal', 'Albania', 'Turkey', 'Netherlands',
-    'Argentina', 'Brazil', 'Canada', 'Mexico', 'Greece'
-  ];
-
-  const availableCountryOptions = countries
-    .filter(c => popularCountryNames.includes(c.name))
-    .map(c => c.name);
-
-  const categoryOptions = categories.map(c => c.name);
-
-  const publicGenreOptions = [
-    ...availableCountryOptions,
-    ...categoryOptions
-  ];
-
   const catalogs: any[] = [];
 
-  // 1. Private Catalogs (se abilitato)
+  // 1. Private Catalogs (DaddyLive HD - IT & EN)
   if (userConfig?.enablePrivate !== false) {
     catalogs.push({
       type: 'tv',
       id: 'rivestream-private',
-      name: '⚡ RiveStream Private TV & Sport',
+      name: '⚡ RiveStream TV & Sport (IT / EN)',
       extra: [
+        {
+          name: 'genre',
+          isRequired: false,
+          options: [
+            'All',
+            '🇮🇹 Canali Italiani',
+            '🇬🇧 UK / USA / Sport',
+            '⚽ Sky Sport',
+            '🎬 Cinema & Serie TV'
+          ]
+        },
         { name: 'search', isRequired: false },
         { name: 'skip', isRequired: false }
       ]
     });
   }
 
-  // 2. Events Catalog (se abilitato)
+  // 2. Events Catalog (Palinsesto Live Sports)
   if (userConfig?.enableEvents !== false) {
     catalogs.push({
       type: 'tv',
@@ -64,12 +55,29 @@ export function getManifest(userConfig?: UserConfig) {
     });
   }
 
-  // 3. Public Catalog (se abilitato)
+  // 3. Public Catalog (IPTV Italia & Canali Inglesi)
   if (userConfig?.enablePublic !== false) {
+    const publicGenreOptions = [
+      '🇮🇹 Italia',
+      '🇬🇧 United Kingdom',
+      '🇺🇸 United States',
+      '🇨🇦 Canada',
+      '🇦🇺 Australia',
+      'Sports',
+      'News',
+      'Movies',
+      'Entertainment',
+      'Documentary',
+      'Music',
+      'Kids',
+      'Animation',
+      'General'
+    ];
+
     catalogs.push({
       type: 'tv',
       id: 'rivestream-public',
-      name: '📺 RiveStream World IPTV',
+      name: '📺 RiveStream IPTV (IT / EN)',
       extra: [
         {
           name: 'genre',
@@ -84,11 +92,11 @@ export function getManifest(userConfig?: UserConfig) {
 
   return {
     id: 'org.rivestream.stremio',
-    version: '1.0.0',
+    version: '1.1.0',
     name: userConfig?.proxyUrl ? 'RiveStream IPTV [Proxy]' : 'RiveStream IPTV',
-    description: 'Guarda oltre 1.450 canali TV & Sport (DaddyLive HD), 8.400+ canali IPTV mondiali ed eventi live da RiveStream direttamente su Stremio.',
+    description: 'Guarda i migliori canali TV & Sport italiani ed inglesi (DaddyLive HD, Sky, DAZN, Rai, Mediaset, ESPN, TNT Sports) ed eventi live direttamente su Stremio con copertine dedicate.',
     logo: 'https://raw.githubusercontent.com/qwertyuiop8899/tvvoo/refs/heads/main/public/tvvoo.png',
-    background: 'https://raw.githubusercontent.com/qwertyuiop8899/tvvoo/refs/heads/main/public/tvvoo.png',
+    background: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=1600&auto=format&fit=crop&q=80',
     resources: ['catalog', 'meta', 'stream'],
     types: ['tv'],
     catalogs,
