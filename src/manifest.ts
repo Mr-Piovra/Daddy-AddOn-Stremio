@@ -4,7 +4,7 @@ import { UserConfig } from './utils/configParser';
 export function getManifest(userConfig?: UserConfig) {
   const catalogs: any[] = [];
 
-  // 1. Private Catalogs (DaddyLive HD - IT & EN)
+  // 1. Private Catalogs (DaddyLive HD - IT, DAZN, EN Sport & TV)
   if (userConfig?.enablePrivate !== false) {
     catalogs.push({
       type: 'tv',
@@ -17,8 +17,8 @@ export function getManifest(userConfig?: UserConfig) {
           options: [
             'All',
             '🇮🇹 Canali Italiani',
-            '🇬🇧 UK / USA / Sport',
-            '⚽ Sky Sport',
+            '⚽ DAZN & Live Sport',
+            '🇬🇧 UK & USA TV',
             '🎬 Cinema & Serie TV'
           ]
         },
@@ -92,9 +92,9 @@ export function getManifest(userConfig?: UserConfig) {
 
   return {
     id: 'org.rivestream.stremio',
-    version: '1.1.0',
+    version: '1.1.1',
     name: userConfig?.proxyUrl ? 'RiveStream IPTV [Proxy]' : 'RiveStream IPTV',
-    description: 'Guarda i migliori canali TV & Sport italiani ed inglesi (DaddyLive HD, Sky, DAZN, Rai, Mediaset, ESPN, TNT Sports) ed eventi live direttamente su Stremio con copertine dedicate.',
+    description: 'Guarda i migliori canali TV & Sport (DAZN, Sky, Rai, Mediaset, ESPN, TNT Sports, Eurosport) ed eventi live direttamente su Stremio con copertine dedicate.',
     logo: 'https://raw.githubusercontent.com/qwertyuiop8899/tvvoo/refs/heads/main/public/tvvoo.png',
     background: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=1600&auto=format&fit=crop&q=80',
     resources: ['catalog', 'meta', 'stream'],

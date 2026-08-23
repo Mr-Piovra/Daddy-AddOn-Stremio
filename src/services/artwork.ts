@@ -225,12 +225,19 @@ export class ArtworkService {
     );
 
     // Gestione alias Sky Calcio / Sky Sport Calcio
-    let aliasKey: string | undefined;
+    let aliasSkyCalcio: string | undefined;
     if (/sky\s*calcio/i.test(clean)) {
-      aliasKey = normClean.replace('sky-calcio', 'sky-sport-calcio');
+      aliasSkyCalcio = normClean.replace('sky-calcio', 'sky-sport-calcio');
     }
 
-    const keys = Array.from(new Set([normRaw, normClean, normHyphenated, aliasKey])).filter(Boolean) as string[];
+    // Gestione alias DAZN
+    let aliasDazn: string | undefined;
+    const daznMatch = clean.match(/dazn\s*(\d+|f1|laliga\s*\d*)/i);
+    if (daznMatch) {
+      aliasDazn = `dazn-${this.normalizeKey(daznMatch[1])}`;
+    }
+
+    const keys = Array.from(new Set([normRaw, normClean, normHyphenated, aliasSkyCalcio, aliasDazn])).filter(Boolean) as string[];
 
     const primaryMap = isItalian ? this.itaPortraitMap : this.worldPortraitMap;
     const secondaryMap = isItalian ? this.worldPortraitMap : this.itaPortraitMap;
@@ -260,7 +267,14 @@ export class ArtworkService {
       }
     }
 
-    // 4. Fallback per canali generici tipo Sky Calcio X -> Sky Sport Calcio
+    // 4. Fallback generico per DAZN
+    if (/dazn/i.test(name)) {
+      if (primaryMap['dazn-1'] || secondaryMap['dazn-1']) {
+        return primaryMap['dazn-1'] || secondaryMap['dazn-1'];
+      }
+    }
+
+    // 5. Fallback generico per Sky Calcio
     if (/sky.*calcio/i.test(name)) {
       if (primaryMap['sky-sport-calcio']) return primaryMap['sky-sport-calcio'];
     }
@@ -285,7 +299,7 @@ export class ArtworkService {
       .replace(/^[0-9]+(?=[a-zA-Z])/, '') // Rimuove prefissi numerici come "8Sky" -> "Sky"
       .replace(/\s*(\.[a-z0-9]{1,3})+$/i, '')
       .replace(/\s*\((?:\d+|[A-Za-z]{1,3})\)\s*$/i, '')
-      .replace(/\s+(italy|italia|usa|uk|canada|australia|germany|france|spain|poland|serbia|croatia)\b/gi, '')
+      .replace(/\s+(italy|italia|usa|uk|canada|australia|germany|france|spain|poland|serbia|croatia|de|es|fr|it)\b/gi, '')
       .replace(/\s+(hd|fhd|uhd|4k|sd|1080p|720p|hevc|raw|vip)\b/gi, '')
       .replace(/[\+\*\#\_]/g, ' ')
       .replace(/\s+/g, ' ')

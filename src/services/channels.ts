@@ -46,31 +46,42 @@ export class ChannelsService {
   private static ALLOWED_PUBLIC_COUNTRIES = ['IT', 'US', 'UK', 'GB', 'CA', 'AU'];
 
   /**
-   * Classifica un canale DaddyLive per lingua e gruppo.
+   * Classifica un canale DaddyLive per lingua e gruppo, preservando DAZN e tutti i canali sportivi primari.
    */
-  public static classifyPrivateChannel(title: string): { language: 'it' | 'en' | 'other'; group: string; country: string } {
+  public static classifyPrivateChannel(title: string): { language: 'it' | 'en' | 'other'; group: string; country: string; keep: boolean } {
     const isExplicitNonIt = /\b(uk|usa|us|ca|au|nz|de|fr|es|pl|rs|hr|bg|ro|gr|tr|il|ru|al|ar|nl|se|dk|no|fi|cz|sk|hu)\b/i.test(title);
 
-    // Controlla se canale Italiano
+    // 1. Canali specificamente Italiani
     const isIt = /\b(italy|italia)\b/i.test(title) ||
       (!isExplicitNonIt && /\b(rai|mediaset|canale 5|italia 1|rete 4|la7|tv8|nove|twentyseven|sportitalia|supertennis|top calcio|tgcom24|cine34|iris|dmax it|focus it)\b/i.test(title));
 
     if (isIt) {
-      return { language: 'it', country: 'Italy', group: '🇮🇹 Canali Italiani' };
+      return { language: 'it', country: 'Italy', group: '🇮🇹 Canali Italiani', keep: true };
     }
 
-    // Controlla se canale di paesi terzi non richiesti (Germania, Spagna, Polonia, Serbia, Russia, ecc.)
-    const isOther = /\b(de|germany|fr|france|es|spain|laliga|movistar|pl|poland|polsat|rs|serbia|hr|croatia|bg|bulgaria|ro|romania|gr|greece|tr|turkey|il|israel|ru|russia|al|albania|ar|arabic|nl|netherlands|se|sweden|dk|denmark|no|norway|fi|finland|cz|czech|sk|slovakia|hu|hungary)\b/i.test(title);
-    if (isOther) {
-      return { language: 'other', country: 'Other', group: 'Altro' };
+    // 2. Canali DAZN (tutti i canali DAZN mondiali sono mantenuti!)
+    if (/dazn/i.test(title)) {
+      return { language: 'en', country: 'International', group: '⚽ DAZN & Live Sport', keep: true };
     }
 
-    // Default: Canali Inglesi / Internazionali (USA, UK, Australia, Canada, Sport internazionali)
-    return { language: 'en', country: 'English / International', group: '🇬🇧 UK / USA / Sport' };
+    // 3. Canali Sport Internazionali Primari (Sky Sports, TNT Sports, ESPN, Premier Sports, EuroSport, MotoGP, F1, Fox Sports, CBS Sports, NBC Sports)
+    const isMajorSport = /\b(sky sports|tnt sports|espn|premier sports|eurosport|motogp|f1|fox sports|cbs sports|nbc sports|nfl network|nba tv|mlb network|nhl network|golf channel|tennis channel|fight network|super sport|astro supersport|tsn|sportsnet|bein sports|canal\+ sport|canal\+ foot|canal\+ motogp|movistar liga|movistar deportes)\b/i.test(title);
+    if (isMajorSport) {
+      return { language: 'en', country: 'International', group: '⚽ DAZN & Live Sport', keep: true };
+    }
+
+    // 4. Canali da escludere (Generalisti / News / Soap di paesi terzi non richiesti)
+    const isUnwantedGeneral = /\b(pl|poland|polsat|rs|serbia|hr|croatia|bg|bulgaria|ro|romania|gr|greece|tr|turkey|il|israel|ru|russia|al|albania|ar|arabic|nl|netherlands|se|sweden|dk|denmark|no|norway|fi|finland|cz|czech|sk|slovakia|hu|hungary)\b/i.test(title);
+    if (isUnwantedGeneral) {
+      return { language: 'other', country: 'Other', group: 'Altro', keep: false };
+    }
+
+    // 5. Canali TV e Cinema USA / UK / Internazionali
+    return { language: 'en', country: 'English / International', group: '🇬🇧 UK & USA TV', keep: true };
   }
 
   /**
-   * Inizializza i canali caricando il dataset locale e applicando i filtri mirati (IT + EN).
+   * Inizializza i canali caricando il dataset locale e applicando i filtri mirati (IT + EN + Sport).
    */
   public static init(): void {
     if (this.isInitialized) return;
@@ -94,11 +105,13 @@ export class ChannelsService {
               title: c.title,
               language: cl.language,
               group: cl.group,
-              country: cl.country
+              country: cl.country,
+              keep: cl.keep
             };
           })
-          // Filtra escludendo le lingue non richieste (mantenendo solo IT ed EN)
-          .filter(c => c.language === 'it' || c.language === 'en');
+          // Filtra mantenendo IT, EN, DAZN e grandi canali sportivi
+          .filter(c => c.keep)
+          .map(({ keep, ...rest }) => rest);
       }
 
       // 2. Carica e filtra Canali Public (World IPTV limitato a IT + EN)
@@ -141,7 +154,7 @@ export class ChannelsService {
       this.loadCachedChannelsFromDisk();
 
       this.isInitialized = true;
-      console.log(`[ChannelsService] Inizializzazione completata: ${this.privateChannels.length} canali Private (IT/EN) e ${this.publicChannels.length} canali Public (IT/EN).`);
+      console.log(`[ChannelsService] Inizializzazione completata: ${this.privateChannels.length} canali Private (IT/EN/DAZN) e ${this.publicChannels.length} canali Public.`);
 
       // 6. Sync periodico non bloccante
       this.scheduleBackgroundSync();
@@ -168,10 +181,14 @@ export class ChannelsService {
       const g = filter.genre.toLowerCase();
       if (g.includes('ital')) {
         list = list.filter(c => c.language === 'it');
-      } else if (g.includes('uk') || g.includes('usa') || g.includes('sport') || g.includes('eng')) {
-        list = list.filter(c => c.language === 'en');
+      } else if (g.includes('dazn') || g.includes('sport')) {
+        list = list.filter(c => (c.group || '').includes('Sport') || /dazn|sport|espn|f1|motogp/i.test(c.title));
+      } else if (g.includes('uk') || g.includes('usa')) {
+        list = list.filter(c => (c.group || '').includes('UK') || (c.group || '').includes('USA'));
       } else if (g.includes('sky')) {
         list = list.filter(c => /sky/i.test(c.title));
+      } else if (g.includes('cinema') || g.includes('film')) {
+        list = list.filter(c => /cinema|movie|film|hbo|amc|starz|cinemax/i.test(c.title));
       }
     }
 
@@ -251,7 +268,7 @@ export class ChannelsService {
   }
 
   /**
-   * Esegue la sincronizzazione asincrona dei canali in background filtrando solo IT / EN.
+   * Sincronizzazione asincrona con supporto DAZN e sport.
    */
   public static async syncChannelsFromRemote(): Promise<void> {
     try {
@@ -271,8 +288,7 @@ export class ChannelsService {
               const title = m[2].trim();
               const cl = this.classifyPrivateChannel(title);
 
-              // Accetta solo canali Italiani o Inglesi
-              if (cl.language === 'it' || cl.language === 'en') {
+              if (cl.keep) {
                 if (!this.privateChannels.some(c => c.id === chId)) {
                   this.privateChannels.push({
                     id: chId,
@@ -287,7 +303,7 @@ export class ChannelsService {
             }
 
             if (addedCount > 0) {
-              console.log(`[ChannelsService] Sincronizzati ${addedCount} nuovi canali IT/EN da ${mirror.name}`);
+              console.log(`[ChannelsService] Sincronizzati ${addedCount} nuovi canali IT/EN/Sport da ${mirror.name}`);
               this.saveCachedChannelsToDisk();
             }
             break;
@@ -318,7 +334,7 @@ export class ChannelsService {
         const extra: PrivateChannel[] = JSON.parse(fs.readFileSync(diskPath, 'utf8'));
         for (const ch of extra) {
           const cl = this.classifyPrivateChannel(ch.title);
-          if (cl.language === 'it' || cl.language === 'en') {
+          if (cl.keep) {
             if (!this.privateChannels.some(c => c.id === ch.id)) {
               this.privateChannels.push({
                 ...ch,
