@@ -1,0 +1,42 @@
+{
+  "name": "rivestream-stremio",
+  "version": "1.0.0",
+  "description": "Stremio Addon for RiveStream IPTV and Live Sports with native DaddyLive HLS resolution",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && cp -r src/data dist/data",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test:extractor": "ts-node test/test-extractor.ts",
+    "test:addon": "ts-node test/test-addon.ts"
+  },
+  "keywords": [
+    "stremio",
+    "stremio-addon",
+    "rivestream",
+    "iptv",
+    "daddylive",
+    "hls",
+    "streaming"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "node-fetch": "^2.7.0",
+    "stremio-addon-sdk": "^1.6.10"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.12.7",
+    "@types/node-fetch": "^2.6.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

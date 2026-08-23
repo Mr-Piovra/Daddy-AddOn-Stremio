@@ -1,0 +1,11 @@
+node_modules
+dist
+cache
+.git
+.gitignore
+.env
+.env.local
+*.log
+easyproxyerrorlog.md
+references
+.DS_Store
