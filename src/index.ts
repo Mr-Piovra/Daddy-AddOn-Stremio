@@ -7,6 +7,8 @@ import { CatalogHandler } from './handlers/catalog';
 import { MetaHandler } from './handlers/meta';
 import { StreamHandler } from './handlers/stream';
 import { ConfigParser, UserConfig } from './utils/configParser';
+import { ChannelsService } from './services/channels';
+import { ScheduleService } from './services/schedule';
 
 // Hardening process errors
 process.on('uncaughtException', (err: unknown) => {
@@ -19,6 +21,14 @@ process.on('unhandledRejection', (reason: unknown) => {
 async function bootstrap() {
   const app = express();
   app.use(cors());
+
+  // Inizializza dataset e background workers
+  try {
+    ChannelsService.init();
+    ScheduleService.startBackgroundWorker(300000); // 5 minuti
+  } catch (err) {
+    console.error('[RiveStream] Errore avvio background services:', err);
+  }
 
   // Static files & landing page
   const publicDir = path.join(__dirname, '../public');
@@ -112,7 +122,7 @@ async function bootstrap() {
   app.get('/meta/:type/:id.json', metaRouteHandler);
   app.get('/:configuration/meta/:type/:id.json', metaRouteHandler);
 
-  // 4. STREAM (Default & Configured) - Zero Cache per flussi sempre freschi
+  // 4. STREAM (Default & Configured)
   const streamRouteHandler = async (req: Request, res: Response) => {
     const configToken = req.params.configuration;
     const userConfig: UserConfig = configToken ? ConfigParser.decode(configToken) : {};
@@ -122,7 +132,7 @@ async function bootstrap() {
 
     try {
       const result = await StreamHandler.handle({ type, id, userConfig });
-      sendStremioResponse(res, result, 0); // No-cache
+      sendStremioResponse(res, result, 0); // No-cache per stream
     } catch (err) {
       console.error('[RiveStream] Stream error:', err);
       sendStremioResponse(res, { streams: [] }, 0);

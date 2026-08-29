@@ -20,50 +20,51 @@ export interface ScheduleEvent {
 export class ScheduleService {
   private static CACHE_KEY = 'rivestream:schedule';
   private static DISK_CACHE_PATH = path.join(__dirname, '../../cache/schedule_cache.json');
+  private static isSyncing = false;
+  private static syncInterval: NodeJS.Timeout | null = null;
 
   /**
-   * Recupera il palinsesto degli eventi live con fallback multi-sorgente:
-   * 1. DaddyLive Native Mirrors (dlstreams.st, daddylive.mp, dlhd.pk)
-   * 2. RiveStream Backend API
-   * 3. Cache persistente su disco
+   * Avvia il worker in background per mantenere il palinsesto sempre aggiornato e caldo in memoria
+   */
+  public static startBackgroundWorker(intervalMs: number = 300000): void {
+    if (this.syncInterval) return;
+
+    // Esegui primo sync in background senza bloccare
+    setTimeout(() => {
+      this.syncSchedule().catch(err => {
+        if (CONFIG.DEBUG) console.warn('[ScheduleService] Initial background sync error:', err);
+      });
+    }, 1000);
+
+    // Programma il timer ricorrente ogni 5 minuti
+    this.syncInterval = setInterval(() => {
+      this.syncSchedule().catch(err => {
+        if (CONFIG.DEBUG) console.warn('[ScheduleService] Periodic background sync error:', err);
+      });
+    }, intervalMs);
+
+    console.log(`[ScheduleService] Background Worker avviato (sync ogni ${intervalMs / 60000} minuti)`);
+  }
+
+  /**
+   * Recupera il palinsesto degli eventi live:
+   * 1. Dalla memoria (MemoryCache) -> Istantaneo (< 1ms)
+   * 2. Dal disco (DISK_CACHE_PATH) -> Istantaneo (< 5ms)
+   * 3. Sync live di emergenza solo se la cache è completamente vuota
    */
   public static async getLiveEvents(): Promise<ScheduleEvent[]> {
     const cached = MemoryCache.get<ScheduleEvent[]>(this.CACHE_KEY);
     if (cached && cached.length > 0) return cached;
 
-    // 1. Prova dai mirror nativi di DaddyLive
-    for (const mirror of CONFIG.MIRRORS) {
-      const scheduleUrl = `${mirror.baseUrl.replace(/\/+$/, '')}/schedule/schedule-generated.json`;
-      try {
-        const events = await this.fetchFromDaddyLive(scheduleUrl);
-        if (events && events.length > 0) {
-          this.persistEvents(events);
-          return events;
-        }
-      } catch {
-        // Fallback al prossimo mirror
-      }
-    }
-
-    // 2. Prova da RiveStream Backend API come fallback
-    try {
-      const events = await this.fetchFromRiveStream(CONFIG.RIVESTREAM_SCHEDULE_URL);
-      if (events && events.length > 0) {
-        this.persistEvents(events);
-        return events;
-      }
-    } catch {
-      // Fallback
-    }
-
-    // 3. Fallback finale su cache persistente su disco
+    // 2. Fallback su disco
     const diskEvents = this.readFromDisk();
     if (diskEvents.length > 0) {
       MemoryCache.set(this.CACHE_KEY, diskEvents, CONFIG.SCHEDULE_CACHE_TTL_MS);
       return diskEvents;
     }
 
-    return [];
+    // 3. Fallback di emergenza
+    return await this.syncSchedule();
   }
 
   /**
@@ -74,6 +75,49 @@ export class ScheduleService {
     return events.find(e => e.id === id) || null;
   }
 
+  /**
+   * Sincronizza il palinsesto con timeout rapido (3.5s)
+   */
+  public static async syncSchedule(): Promise<ScheduleEvent[]> {
+    if (this.isSyncing) {
+      return this.readFromDisk();
+    }
+    this.isSyncing = true;
+
+    try {
+      // 1. Prova dai mirror attivi
+      for (const mirror of CONFIG.MIRRORS) {
+        const scheduleUrl = `${mirror.baseUrl.replace(/\/+$/, '')}/schedule/schedule-generated.json`;
+        try {
+          const events = await this.fetchFromDaddyLive(scheduleUrl);
+          if (events && events.length > 0) {
+            this.persistEvents(events);
+            console.log(`[ScheduleService] Palinsesto aggiornato con successo da ${mirror.name} (${events.length} eventi)`);
+            return events;
+          }
+        } catch {
+          // Fallback
+        }
+      }
+
+      // 2. Prova da RiveStream Backend API
+      try {
+        const events = await this.fetchFromRiveStream(CONFIG.RIVESTREAM_SCHEDULE_URL);
+        if (events && events.length > 0) {
+          this.persistEvents(events);
+          console.log(`[ScheduleService] Palinsesto aggiornato da RiveStream API (${events.length} eventi)`);
+          return events;
+        }
+      } catch {
+        // Fallback
+      }
+    } finally {
+      this.isSyncing = false;
+    }
+
+    return this.readFromDisk();
+  }
+
   private static async fetchFromDaddyLive(url: string): Promise<ScheduleEvent[]> {
     const resp = await fetch(url, {
       headers: {
@@ -81,7 +125,7 @@ export class ScheduleService {
         'Accept': 'application/json, text/plain, */*',
         'Referer': 'https://dlstreams.st/'
       },
-      signal: AbortSignal.timeout(CONFIG.REQUEST_TIMEOUT_MS)
+      signal: AbortSignal.timeout(3500)
     });
 
     if (!resp.ok) return [];
@@ -96,7 +140,7 @@ export class ScheduleService {
         'User-Agent': CONFIG.USER_AGENT,
         'Accept': 'application/json'
       },
-      signal: AbortSignal.timeout(CONFIG.REQUEST_TIMEOUT_MS)
+      signal: AbortSignal.timeout(3500)
     });
 
     if (!resp.ok) return [];

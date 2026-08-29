@@ -22,9 +22,9 @@ export interface StremioStream {
 
 export class StreamHandler {
   /**
-   * Gestisce la risoluzione degli stream in modo pulito e affidabile.
-   * Quando EasyProxy è configurato, genera gli stream che delegano l'estrazione a EasyProxy
-   * passando contestualmente gli header Referer/Origin richiesti dalla CDN per evitare sia 403 Invalid Token che 403 Invalid Referer.
+   * Gestisce la risoluzione degli stream in modo fulmineo (< 30ms):
+   * 1. Se EasyProxy/MediaFlow è attivo: genera istantaneamente i link Lazy Extractor con gli header Referer/Origin corretti.
+   * 2. Applica MemoryCache (TTL 5 min) per azzerare la latenza sulle richieste ripetute.
    */
   public static async handle(args: {
     type: string;
@@ -35,17 +35,22 @@ export class StreamHandler {
     const hasCustomProxy = !!userConfig?.proxyUrl?.trim();
     const proxyLabel = userConfig?.proxyType === 'mediaflow' ? 'MediaFlow' : 'EasyProxy';
 
+    const cacheKey = `streams:${id}:${userConfig?.proxyUrl || 'direct'}:${userConfig?.proxyType || 'ep'}:${!!userConfig?.includeDirect}`;
+    const cachedStreams = MemoryCache.get<StremioStream[]>(cacheKey);
+    if (cachedStreams && cachedStreams.length > 0) {
+      return { streams: cachedStreams };
+    }
+
     // 1. Canale Private (DaddyLive HD)
     if (id.startsWith('rivestream:private:')) {
       const channelId = id.replace('rivestream:private:', '').replace(/\D/g, '');
       const streams: StremioStream[] = [];
 
-      // A. Flussi EasyProxy
+      // A. Flussi EasyProxy (Lazy Extraction - Risoluzione istantanea al play)
       if (hasCustomProxy) {
-        // Risolve lo stream tramite EasyProxy per ciascun mirror
-        const proxyPromises = CONFIG.MIRRORS.map(async (mirror) => {
+        for (const mirror of CONFIG.MIRRORS) {
           const candidateUrl = `${mirror.baseUrl.replace(/\/+$/, '')}/stream/stream-${channelId}.php`;
-          const proxyUrl = await ProxyBuilder.resolveEasyProxyStream(
+          const extractorStreamUrl = ProxyBuilder.buildExtractorUrl(
             candidateUrl,
             userConfig,
             'dlstreams',
@@ -55,39 +60,25 @@ export class StreamHandler {
             }
           );
 
-          const isResolved = proxyUrl.includes('/proxy/hls/manifest.m3u8');
-
-          return {
-            isResolved,
-            stream: {
-              name: `RiveStream [${proxyLabel}]`,
-              title: `⚡ ${mirror.name}\n1080p HLS (${proxyLabel})`,
-              url: proxyUrl,
-              behaviorHints: {
-                notWebReady: false
-              }
+          streams.push({
+            name: `RiveStream [${proxyLabel}]`,
+            title: `⚡ ${mirror.name}\n1080p HLS (${proxyLabel})`,
+            url: extractorStreamUrl,
+            behaviorHints: {
+              notWebReady: false
             }
-          };
-        });
-
-        const results = await Promise.all(proxyPromises);
-        const resolved = results.filter((r) => r.isResolved).map((r) => r.stream);
-
-        if (resolved.length > 0) {
-          streams.push(...resolved);
-        } else {
-          streams.push(...results.map((r) => r.stream));
+          });
         }
 
-        // Se l'utente ha richiesto anche i diretti
+        // Se l'utente ha richiesto anche i flussi diretti
         if (userConfig?.includeDirect) {
-          const cacheKey = `streams:private:${channelId}`;
-          let extracted = MemoryCache.get<ExtractedStream[]>(cacheKey);
+          const directCacheKey = `streams:private:direct:${channelId}`;
+          let extracted = MemoryCache.get<ExtractedStream[]>(directCacheKey);
 
           if (!extracted || extracted.length === 0) {
             extracted = await DLStreamsExtractor.extractAll(channelId);
             if (extracted.length > 0) {
-              MemoryCache.set(cacheKey, extracted, CONFIG.STREAM_CACHE_TTL_MS);
+              MemoryCache.set(directCacheKey, extracted, CONFIG.STREAM_CACHE_TTL_MS);
             }
           }
 
@@ -106,14 +97,14 @@ export class StreamHandler {
           }
         }
       } else {
-        // Nessun proxy: estrazione locale diretta
-        const cacheKey = `streams:private:${channelId}`;
-        let extracted = MemoryCache.get<ExtractedStream[]>(cacheKey);
+        // Nessun proxy: estrazione locale diretta con cache
+        const directCacheKey = `streams:private:direct:${channelId}`;
+        let extracted = MemoryCache.get<ExtractedStream[]>(directCacheKey);
 
         if (!extracted || extracted.length === 0) {
           extracted = await DLStreamsExtractor.extractAll(channelId);
           if (extracted.length > 0) {
-            MemoryCache.set(cacheKey, extracted, CONFIG.STREAM_CACHE_TTL_MS);
+            MemoryCache.set(directCacheKey, extracted, CONFIG.STREAM_CACHE_TTL_MS);
           }
         }
 
@@ -132,6 +123,9 @@ export class StreamHandler {
         }
       }
 
+      if (streams.length > 0) {
+        MemoryCache.set(cacheKey, streams, CONFIG.STREAM_CACHE_TTL_MS);
+      }
       return { streams };
     }
 
@@ -178,6 +172,9 @@ export class StreamHandler {
         });
       }
 
+      if (streams.length > 0) {
+        MemoryCache.set(cacheKey, streams, CONFIG.STREAM_CACHE_TTL_MS);
+      }
       return { streams };
     }
 
@@ -198,9 +195,9 @@ export class StreamHandler {
         if (!channelId) continue;
 
         if (hasCustomProxy) {
-          const proxyPromises = CONFIG.MIRRORS.slice(0, 2).map(async (mirror) => {
+          for (const mirror of CONFIG.MIRRORS.slice(0, 2)) {
             const candidateUrl = `${mirror.baseUrl.replace(/\/+$/, '')}/stream/stream-${channelId}.php`;
-            const proxyUrl = await ProxyBuilder.resolveEasyProxyStream(
+            const extractorStreamUrl = ProxyBuilder.buildExtractorUrl(
               candidateUrl,
               userConfig,
               'dlstreams',
@@ -210,38 +207,24 @@ export class StreamHandler {
               }
             );
 
-            const isResolved = proxyUrl.includes('/proxy/hls/manifest.m3u8');
-
-            return {
-              isResolved,
-              stream: {
-                name: `RiveStream Live [${proxyLabel}]`,
-                title: `⚽ [${ch.channel_name}] - ${mirror.name}\n1080p HLS (${proxyLabel})`,
-                url: proxyUrl,
-                behaviorHints: {
-                  notWebReady: false
-                }
+            streams.push({
+              name: `RiveStream Live [${proxyLabel}]`,
+              title: `⚽ [${ch.channel_name}] - ${mirror.name}\n1080p HLS (${proxyLabel})`,
+              url: extractorStreamUrl,
+              behaviorHints: {
+                notWebReady: false
               }
-            };
-          });
-
-          const results = await Promise.all(proxyPromises);
-          const resolved = results.filter((r) => r.isResolved).map((r) => r.stream);
-
-          if (resolved.length > 0) {
-            streams.push(...resolved);
-          } else {
-            streams.push(...results.map((r) => r.stream));
+            });
           }
 
           if (userConfig?.includeDirect) {
-            const cacheKey = `streams:private:${channelId}`;
-            let extracted = MemoryCache.get<ExtractedStream[]>(cacheKey);
+            const directCacheKey = `streams:private:direct:${channelId}`;
+            let extracted = MemoryCache.get<ExtractedStream[]>(directCacheKey);
 
             if (!extracted || extracted.length === 0) {
               extracted = await DLStreamsExtractor.extractAll(channelId);
               if (extracted.length > 0) {
-                MemoryCache.set(cacheKey, extracted, CONFIG.STREAM_CACHE_TTL_MS);
+                MemoryCache.set(directCacheKey, extracted, CONFIG.STREAM_CACHE_TTL_MS);
               }
             }
 
@@ -260,13 +243,13 @@ export class StreamHandler {
             }
           }
         } else {
-          const cacheKey = `streams:private:${channelId}`;
-          let extracted = MemoryCache.get<ExtractedStream[]>(cacheKey);
+          const directCacheKey = `streams:private:direct:${channelId}`;
+          let extracted = MemoryCache.get<ExtractedStream[]>(directCacheKey);
 
           if (!extracted || extracted.length === 0) {
             extracted = await DLStreamsExtractor.extractAll(channelId);
             if (extracted.length > 0) {
-              MemoryCache.set(cacheKey, extracted, CONFIG.STREAM_CACHE_TTL_MS);
+              MemoryCache.set(directCacheKey, extracted, CONFIG.STREAM_CACHE_TTL_MS);
             }
           }
 
@@ -286,6 +269,9 @@ export class StreamHandler {
         }
       }
 
+      if (streams.length > 0) {
+        MemoryCache.set(cacheKey, streams, CONFIG.STREAM_CACHE_TTL_MS);
+      }
       return { streams };
     }
 
